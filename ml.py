@@ -1,10 +1,5 @@
-from flask import Flask, request, jsonify
 from ultralytics import YOLO
 import requests
-from flask_cors import CORS
-
-app = Flask(__name__)
-CORS(app, origins=['http://localhost:5500'])
 
 # Initialize the YOLO model
 model = YOLO("yolov8n.pt")
@@ -22,13 +17,12 @@ def list_to_dict_with_count(input_list):
 # Function to perform object detection and count food items
 def detect_food(image_path):
     results = model(image_path)
-    print(type(results))
     names = model.names
     food_list = []
 
     # Count food items
-    for r in results.pred:
-        for c in r[:, -1].unique():
+    for r in results:
+        for c in r.boxes.cls:
             food_list.append(names[int(c)])
 
     food_dict = list_to_dict_with_count(food_list)
@@ -45,47 +39,35 @@ def get_nutritional_info(food_item):
     }
 
     response = requests.get(base_url, params=params)
-    data = response.json()
 
-    if 'foods' in data and len(data['foods']) > 0:
-        food = data['foods'][0]
-        nutrients = food['foodNutrients']
-        nutrient_dict = {}
-        for nutrient in nutrients:
-            nutrient_dict[nutrient['nutrientName']] = nutrient['value']
-        return nutrient_dict
+    if response.status_code == 200:
+        data = response.json()
+        if 'foods' in data and len(data['foods']) > 0:
+            first_food = data['foods'][0]
+            description = first_food['description']
+            serving_size = first_food.get('servingSize', 0)
+            nutritional_info = first_food['foodNutrients']
+
+            print(f"Food: {description}")
+            print(f"Serving Size: {serving_size}")
+            print("Nutritional Information:")
+            for nutrient in nutritional_info:
+                print(f"{nutrient['nutrientName']}: {nutrient['value']} {nutrient['unitName']}")
+        else:
+            print(f"No results found for: {food_item}")
     else:
-        return None
+        print(f"Error in the API request for: {food_item}. Status Code: {response.status_code}")
 
+# Main function
+def main():
+    image_path = "/content/1466490845071.jpg"
+    food_dict = detect_food(image_path)
 
+    for food_item, count in food_dict.items():
+        
+        print("__________________")
+        print(f"Food Item: {food_item}, Count: {count}")
+        print("Nutritional Information for", food_item)
+        get_nutritional_info(food_item)
 
-# Route to handle file uploads
-@app.route('/upload', methods=['POST'])
-def upload_file():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'})
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'})
-
-    # Save the uploaded file to disk
-    file.save(file.filename)
-
-    # Perform object detection on the uploaded image
-    food_dict = detect_food(file.filename)
-
-    # Get nutritional information for each food item
-    nutrient_dict = {}
-    for food_item in food_dict.keys():
-        nutrient_info = get_nutritional_info(food_item)
-        if nutrient_info is not None:
-            nutrient_dict[food_item] = nutrient_info
-    
-    print("Result: ", {'food': food_dict, 'nutrients': nutrient_dict})
-
-    # Return the results as JSON
-    return jsonify({'food': food_dict, 'nutrients': nutrient_dict})
-
-if __name__ == '__main__':
-    app.run(port=5001)
+main()
