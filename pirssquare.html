@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      /* CSS styles for the page */
+      body {
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+      }
+
+      h2 {
+        text-align: center;
+      }
+
+      #videoElement {
+        display: block;
+        margin: 0 auto;
+        max-width: 100%;
+        height: auto;
+        position: relative;
+      }
+
+      .loading-screen {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .loading-screen::after {
+        content: "";
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        border: 10px solid #ccc;
+        border-top-color: #f44336;
+        animation: spin 1s linear infinite;
+      }
+
+      #captureButton {
+        display: block;
+        margin: 20px auto;
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      #captureButton:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .loading-animation {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(255, 255, 255, 0.8);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .loading-animation::after {
+        content: "";
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        border: 10px solid #ccc;
+        border-top-color: #f44336;
+        animation: spin 1s linear infinite;
+      }
+
+      /* CSS styles for the flex table */
+      .flex-table {
+        display: flex;
+        flex-direction: column;
+        border-collapse: collapse;
+        width: 100%;
+        max-width: 800px;
+        margin: 0 auto;
+        font-size: 14px;
+        font-family: Arial, sans-serif;
+      }
+
+      .flex-row {
+        display: flex;
+        flex-direction: row;
+        border-bottom: 1px solid #ddd;
+      }
+
+      .header {
+        font-weight: bold;
+        background-color: #f2f2f2;
+      }
+
+      .flex-row > div {
+        flex: 1;
+        padding: 8px;
+        text-align: left;
+      }
+
+      .flex-row > div:first-child {
+        flex: 2;
+      }
+
+      @media (max-width: 600px) {
+        .flex-row {
+          flex-direction: column;
+        }
+
+        .flex-row > div {
+          padding: 4px;
+        }
+
+        .header {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Food Scan</h2>
+
+    <!-- Video element to display the camera stream -->
+    <video autoplay="true" id="videoElement"></video>
+
+    <!-- Button to capture the image -->
+    <button id="captureButton" onClick="main()">Capture</button>
+    
+
+    <!-- JavaScript code to access the camera and process the image -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.8.0/dist/tf.min.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.8.0/dist/tf-converter.min.js"></script>
+    <script type="text/javascript">
+
+
+      // Get the video element and the capture button
+      var video = document.querySelector("#videoElement");
+      var captureButton = document.querySelector("#captureButton");
+
+      // Check if the browser supports getUserMedia
+      if (navigator.mediaDevices.getUserMedia) {
+        // Access the camera stream
+        navigator.mediaDevices.getUserMedia({ video: true })
+          .then(function (stream) {
+            video.srcObject = stream;
+          })
+          .catch(function (error) {
+            console.log("Error with accessing the camera: " + error);
+          });
+      }
+
+
+
+
+      // Function to convert a list into a dictionary with item counts
+      function list_to_dict_with_count(input_list) {
+          let count_dict = {};
+          for(let item of input_list) {
+              if (item in count_dict) {
+                  count_dict[item] += 1;
+              } else {
+                  count_dict[item] = 1;
+              }
+          }
+
+          return count_dict;
+      }
+
+      // Load the model
+      let model;
+      async function load_model() {
+        model = await tf.automl.loadObjectDetection('model.json');
+      }
+
+      // Function to perform object detection and count food items
+      async function detect_food(image_path) {
+        if(!model) {
+          throw new Error('Model is not initialized');
+        }
+
+        const results = await model.executeAsync(image_path);
+        let food_list = [];
+
+        // Mock food names
+        let names = ['Apple', 'Orange', 'Banana', 'Grapes'];
+
+        // Count food items
+        for(let r of results) {
+          for(let c of r.boxes.cls) {
+            food_list.push(names[parseInt(c)]);
+          }
+        }
+
+        let food_dict = list_to_dict_with_count(food_list);
+        return food_dict;
+      }
+
+
+      // Function to make API requests and retrieve nutritional information
+      async function get_nutritional_info(food_item) {
+          let api_key = 'kyuAfQJYgTsgfiDveUEyPhPmKdDezTNrk2w6i1mw';
+          let base_url = 'https://api.nal.usda.gov/fdc/v1/foods/search';
+
+          try {
+              let response = await axios.get(base_url, {params: {'query': food_item, 'api_key': api_key}});
+
+              // Check response code
+              if(response.status == 200){
+                  let data = response.data;
+                  if('foods' in data && data.foods.length > 0) {
+                      let first_food = data.foods[0];
+                      let description = first_food.description;
+                      let serving_size = first_food.servingSize;
+                      let nutritional_info = first_food.foodNutrients;
+
+                      console.log(`Food: ${description}`);
+                      console.log(`Serving Size: ${serving_size}`);
+                      console.log("Nutritional Information:");
+                      for(let nutrient of nutritional_info) {
+                          console.log(`${nutrient.nutrientName}: ${nutrient.value} ${nutrient.unitName}`);
+                      }
+                  } else {
+                      console.log(`No results found for: ${food_item}`);
+                  }
+              }
+          } catch(error) {
+              console.log(`Error in the API request for: ${food_item}. ${error}`);
+          }
+      }
+
+      // Main function
+      async function main() {
+        // Load the model
+        try {
+          model = await tf.loadGraphModel('path/to/model.json');
+        } catch (error) {
+          console.log(`Error loading the model: ${error}`);
+          return;
+        }
+        // Get the image path from the input field
+        let image_path = document.getElementById('image_path').value;
+
+        // Check if the model is initialized before calling detect_food
+        if (!model) {
+          throw new Error('Model is not initialized');
+        }
+
+        // Detect food items in the image
+        let food_dict = await detect_food(image_path);
+
+        // Display the food items and their counts
+        let food_list = Object.keys(food_dict);
+        let food_counts = Object.values(food_dict);
+        let food_html = '';
+        for (let i = 0; i < food_list.length; i++) {
+          food_html += `${food_list[i]}: ${food_counts[i]}<br>`;
+        }
+        document.getElementById('food_list').innerHTML = food_html;
+      }
+
+
+
+
+      // Add a click event listener to the capture button
+      captureButton.addEventListener("click", async function () {
+        // Disable the capture button
+        captureButton.disabled = true;
+
+        // Pause the video stream
+        video.pause();
+
+        // Display a loading screen
+        var loadingScreen = document.createElement("div");
+        loadingScreen.classList.add("loading-screen");
+        document.body.appendChild(loadingScreen);
+
+        // Define the foods object
+        const foods = {
+          foods: [
+            {
+              name: "Avocado",
+              macros: {
+                protein: "2g",
+                carbohydrates: "9g",
+                fat: "15g"
+              },
+              vitamins: {
+                C: "10mg",
+                E: "2mg",
+                K: "20mcg"
+              },
+              minerals: {
+                Potassium: "400mg",
+                Copper: "0.2mg",
+                Folate: "30mcg"
+              }
+            },
+            {
+              name: "Salmon",
+              macros: {
+                protein: "25g",
+                carbohydrates: "0g",
+                fat: "10g"
+              },
+              vitamins: {
+                B6: "1mg",
+                B12: "2mcg",
+                D: "10mcg"
+              },
+              minerals: {
+                Selenium: "30mcg",
+                Phosphorus: "250mg",
+                "Omega-3": "1000mg"
+              }
+            },
+            {
+              name: "Spinach",
+              macros: {
+                protein: "2g",
+                carbohydrates: "3g",
+                fat: "0g"
+              },
+              vitamins: {
+                A: "5000IU",
+                C: "30mg",
+                K: "80mcg"
+              },
+              minerals: {
+                Iron: "6mg",
+                Magnesium: "80mg",
+                Potassium: "450mg"
+              }
+            },
+            {
+              name: "Quinoa",
+              macros: {
+                protein: "8g",
+                carbohydrates: "39g",
+                fat: "4g"
+              },
+              vitamins: {
+                B1: "0.2mg",
+                B2: "0.3mg",
+                E: "1mg"
+              },
+              minerals: {
+                Manganese: "1.5mg",
+                Magnesium: "120mg",
+                Phosphorus: "250mg"
+              }
+            },
+            {
+              name: "Blueberries",
+              macros: {
+                protein: "1g",
+                carbohydrates: "21g",
+                fat: "0g"
+              },
+              vitamins: {
+                C: "15mg",
+                K: "29mcg"
+              },
+              minerals: {
+                Manganese: "0.5mg",
+                "Vitamin K": "29mcg"
+              }
+            }
+          ]
+        };
+
+        // Wait for 1 second to simulate processing time
+        setTimeout(function () {
+          // Remove the loading screen and enable the capture button
+          document.body.removeChild(loadingScreen);
+          captureButton.disabled = false;
+
+          // Create a flex table to display the food data
+          var table = document.createElement("div");
+          table.classList.add("flex-table");
+
+          // Create the table header
+          var header = document.createElement("div");
+          header.classList.add("flex-row", "header");
+          header.innerHTML = "<div>Name</div><div>Protein</div><div>Carbohydrates</div><div>Fat</div><div>Vitamins</div><div>Minerals</div>";
+          table.appendChild(header);
+
+          // Create the table rows and calculate the totals
+          var totalProtein = 0;
+          var totalCarbs = 0;
+          var totalFat = 0;
+          var totalVitamins = {};
+          var totalMinerals = {};
+          foods.foods.forEach(function (food) {
+            var protein = parseFloat(food.macros.protein);
+            var carbs = parseFloat(food.macros.carbohydrates);
+            var fat = parseFloat(food.macros.fat);
+            var row = document.createElement("div");
+            row.classList.add("flex-row");
+            row.innerHTML = "<div>" + food.name + "</div><div>" + protein + "</div><div>" + carbs + "</div><div>" + fat + "</div><div>" + parseVitamins(food.vitamins, totalVitamins) + "</div><div>" + parseMinerals(food.minerals, totalMinerals) + "</div>";
+            table.appendChild(row);
+            totalProtein += protein;
+            totalCarbs += carbs;
+            totalFat += fat;
+          });
+
+          // Create the total row and add it to the table
+          var totalRow = document.createElement("div");
+          totalRow.classList.add("flex-row", "total");
+          totalRow.innerHTML = "<div>Total</div><div>" + totalProtein + "g</div><div>" + totalCarbs + "g</div><div>" + totalFat + "mg</div><div>" + parseVitamins(totalVitamins) + "</div><div>" + parseMinerals(totalMinerals) + "</div>";
+          table.appendChild(totalRow);
+
+          // Add the table to the document
+          document.body.appendChild(table);
+        }, 1000);
+
+        // Convert the canvas image to a data URL
+        // var dataURL = canvas.toDataURL();
+
+        // TODO: Send the data URL to the server for processing
+
+        // Resume the video stream
+        // video.play();
+      });
+
+      // Function to parse the vitamins object and calculate the totals
+      function parseVitamins(vitamins, totalVitamins) {
+        var result = "";
+        for (var vitamin in vitamins) {
+          if (totalVitamins) {
+            if (totalVitamins[vitamin]) {
+              totalVitamins[vitamin] += parseFloat(vitamins[vitamin]);
+            } else {
+              totalVitamins[vitamin] = parseFloat(vitamins[vitamin]);
+            }
+          }
+          result += vitamin + ": " + vitamins[vitamin] + "<br>";
+        }
+        return result;
+      }
+
+      // Function to parse the minerals object and calculate the totals
+      function parseMinerals(minerals, totalMinerals) {
+        var result = "";
+        for (var mineral in minerals) {
+          if (totalMinerals) {
+            if (totalMinerals[mineral]) {
+              totalMinerals[mineral] += parseFloat(minerals[mineral]);
+            } else {
+              totalMinerals[mineral] = parseFloat(minerals[mineral]);
+            }
+          }
+          result += mineral + ": " + minerals[mineral] + "<br>";
+        }
+        return result;
+      }
+    </script>
+  </body>
+</html>
