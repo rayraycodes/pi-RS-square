@@ -138,12 +138,13 @@
     <video autoplay="true" id="videoElement"></video>
 
     <!-- Button to capture the image -->
-    <button id="captureButton" onClick="main()">Capture</button>
+    <button id="captureButton" >Capture</button>
     
 
     <!-- JavaScript code to access the camera and process the image -->
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.8.0/dist/tf.min.js"></script>
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.8.0/dist/tf-converter.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
     <script type="text/javascript">
 
 
@@ -165,115 +166,21 @@
 
 
 
-
-      // Function to convert a list into a dictionary with item counts
-      function list_to_dict_with_count(input_list) {
-          let count_dict = {};
-          for(let item of input_list) {
-              if (item in count_dict) {
-                  count_dict[item] += 1;
-              } else {
-                  count_dict[item] = 1;
-              }
-          }
-
-          return count_dict;
-      }
-
-      // Load the model
-      let model;
-      async function load_model() {
-        model = await tf.automl.loadObjectDetection('model.json');
-      }
-
-      // Function to perform object detection and count food items
-      async function detect_food(image_path) {
-        if(!model) {
-          throw new Error('Model is not initialized');
+        // Function to send image data to ml.py via POST method
+        function sendImageDataToML(imageData) {
+          fetch('/ml', {
+            method: 'POST',
+            body: imageData
+          })
+          .then(response => response.json())
+          .then(data => {
+            // Handle response from ml.py
+            console.log(data);
+          })
+          .catch(error => {
+            console.error('Error:', error);
+          });
         }
-
-        const results = await model.executeAsync(image_path);
-        let food_list = [];
-
-        // Mock food names
-        let names = ['Apple', 'Orange', 'Banana', 'Grapes'];
-
-        // Count food items
-        for(let r of results) {
-          for(let c of r.boxes.cls) {
-            food_list.push(names[parseInt(c)]);
-          }
-        }
-
-        let food_dict = list_to_dict_with_count(food_list);
-        return food_dict;
-      }
-
-
-      // Function to make API requests and retrieve nutritional information
-      async function get_nutritional_info(food_item) {
-          let api_key = 'kyuAfQJYgTsgfiDveUEyPhPmKdDezTNrk2w6i1mw';
-          let base_url = 'https://api.nal.usda.gov/fdc/v1/foods/search';
-
-          try {
-              let response = await axios.get(base_url, {params: {'query': food_item, 'api_key': api_key}});
-
-              // Check response code
-              if(response.status == 200){
-                  let data = response.data;
-                  if('foods' in data && data.foods.length > 0) {
-                      let first_food = data.foods[0];
-                      let description = first_food.description;
-                      let serving_size = first_food.servingSize;
-                      let nutritional_info = first_food.foodNutrients;
-
-                      console.log(`Food: ${description}`);
-                      console.log(`Serving Size: ${serving_size}`);
-                      console.log("Nutritional Information:");
-                      for(let nutrient of nutritional_info) {
-                          console.log(`${nutrient.nutrientName}: ${nutrient.value} ${nutrient.unitName}`);
-                      }
-                  } else {
-                      console.log(`No results found for: ${food_item}`);
-                  }
-              }
-          } catch(error) {
-              console.log(`Error in the API request for: ${food_item}. ${error}`);
-          }
-      }
-
-      // Main function
-      async function main() {
-        // Load the model
-        try {
-          model = await tf.loadGraphModel('path/to/model.json');
-        } catch (error) {
-          console.log(`Error loading the model: ${error}`);
-          return;
-        }
-        // Get the image path from the input field
-        let image_path = document.getElementById('image_path').value;
-
-        // Check if the model is initialized before calling detect_food
-        if (!model) {
-          throw new Error('Model is not initialized');
-        }
-
-        // Detect food items in the image
-        let food_dict = await detect_food(image_path);
-
-        // Display the food items and their counts
-        let food_list = Object.keys(food_dict);
-        let food_counts = Object.values(food_dict);
-        let food_html = '';
-        for (let i = 0; i < food_list.length; i++) {
-          food_html += `${food_list[i]}: ${food_counts[i]}<br>`;
-        }
-        document.getElementById('food_list').innerHTML = food_html;
-      }
-
-
-
 
       // Add a click event listener to the capture button
       captureButton.addEventListener("click", async function () {
@@ -282,6 +189,17 @@
 
         // Pause the video stream
         video.pause();
+
+        // Capture an image from the video stream
+        var canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        var context = canvas.getContext('2d');
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        var imageData = canvas.toDataURL('image/jpeg');
+
+        // Send image data to ml.py
+        sendImageDataToML(imageData);
 
         // Display a loading screen
         var loadingScreen = document.createElement("div");
