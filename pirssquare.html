@@ -144,7 +144,10 @@
     <!-- JavaScript code to access the camera and process the image -->
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.8.0/dist/tf.min.js"></script>
     <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter@3.8.0/dist/tf-converter.min.js"></script>
+    <!-- Import Axios library -->
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+    
     <script type="text/javascript">
 
 
@@ -167,20 +170,28 @@
 
 
         // Function to send image data to ml.py via POST method
+        // Function to send image data to ml.py via POST method
         function sendImageDataToML(imageData) {
-          fetch('/ml', {
-            method: 'POST',
-            body: imageData
-          })
-          .then(response => response.json())
-          .then(data => {
-            // Handle response from ml.py
-            console.log(data);
-          })
-          .catch(error => {
-            console.error('Error:', error);
-          });
+          // Create a new FormData object
+          var formData = new FormData();
+          console.log(imageData);
+
+          // Append the image data to the FormData object
+          formData.append('file', imageData);
+
+          // Send the FormData object to the server
+          axios.post('http://localhost:5001/upload', formData)
+          
+            .then(response => {
+              // Handle response from server
+              console.log(response.data);
+            })
+            .catch(error => {
+              console.log(formData);
+              console.error('Error:', error);
+            });
         }
+
 
       // Add a click event listener to the capture button
       captureButton.addEventListener("click", async function () {
@@ -198,8 +209,21 @@
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         var imageData = canvas.toDataURL('image/jpeg');
 
-        // Send image data to ml.py
-        sendImageDataToML(imageData);
+       // Convert the base64-encoded image data to a Blob object
+    var byteString = atob(imageData.split(',')[1]);
+    var mimeString = imageData.split(',')[0].split(':')[1].split(';')[0];
+    var ab = new ArrayBuffer(byteString.length);
+    var ia = new Uint8Array(ab);
+    for (var i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    var imageBlob = new Blob([ab], { type: mimeString });
+
+    // Convert the Blob object to a File object with a JPEG extension
+    var imageFile = new File([imageBlob], 'image.jpg', { type: 'image/jpeg' });
+
+        // Send the image file to the server
+        sendImageDataToML(imageFile);
 
         // Display a loading screen
         var loadingScreen = document.createElement("div");
